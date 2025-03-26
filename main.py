@@ -1,5 +1,5 @@
 import logging
-from telegram import Bot
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackQueryHandler
 from config import BOT_TOKEN, BRAND_LOGO
 from database import Database
 from modules.application import ApplicationModule
@@ -15,7 +15,8 @@ logger = setup_logging()
 db = Database("ai_live_studio.db")
 
 # 初始化机器人
-bot = TeleBot(BOT_TOKEN)
+updater = Updater(BOT_TOKEN)
+bot = updater.bot
 
 # 初始化功能模块
 application_module = ApplicationModule(bot, db)
@@ -24,20 +25,20 @@ checkin_module = CheckinModule(bot, db)
 admin_module = AdminModule(bot, db)
 
 # 处理回调查询
-@bot.callback_query_handler(func=lambda call: True)
-def handle_callback(call):
-    application_module.process_callback(call)
-    registration_module.process_callback(call)
-    admin_module.process_callback(call)
+updater.dispatcher.add_handler(CallbackQueryHandler(
+    lambda update, context: application_module.process_callback(update, context) or
+                            registration_module.process_callback(update, context) or
+                            admin_module.process_callback(update, context)
+))
 
 # 欢迎消息
-@bot.message_handler(commands=['start'])
-def send_welcome(message):
-    user_name = message.from_user.first_name
+def send_welcome(update, context):
+    user_name = update.effective_user.first_name
     welcome_msg = format_welcome_message(user_name)
-    bot.reply_to(message, welcome_msg)
+    update.effective_message.reply_text(welcome_msg)
 
-# 主程序
-if __name__ == "__main__":
-    logger.info("爱即直播工作室机器人已启动！💕")
-    bot.polling()
+updater.dispatcher.add_handler(CommandHandler('start', send_welcome))
+
+# 启动轮询
+updater.start_polling()
+updater.idle()
