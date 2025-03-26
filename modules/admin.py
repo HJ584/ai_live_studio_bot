@@ -1,124 +1,109 @@
-from telebot import TeleBot, types
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import CallbackContext, CommandHandler, MessageHandler, Filters, CallbackQueryHandler
 from database import Database
 from config import ADMIN_ID, BRAND_LOGO
 
 class AdminModule:
-    def __init__(self, bot: TeleBot, db: Database):
-        self.bot = bot
+    def __init__(self, application, db):
+        self.application = application
         self.db = db
         self._setup_handlers()
     
     def _setup_handlers(self):
-        @self.bot.message_handler(commands=['admin'])
-        def handle_admin(message):
-            user_id = message.from_user.id
-            chat_id = message.chat.id
-            
-            # 检查是否为管理员
-            if user_id != ADMIN_ID:
-                self.bot.reply_to(message, "您没有管理员权限。💕")
-                return
-            
-            keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
-            btn1 = types.KeyboardButton("审核应聘")
-            btn2 = types.KeyboardButton("审核注册")
-            btn3 = types.KeyboardButton("设置小管理员")
-            btn4 = types.KeyboardButton("修改最低直播时长")
-            keyboard.add(btn1, btn2, btn3, btn4)
-            
-            self.bot.reply_to(message, "管理员菜单", reply_markup=keyboard)
+        self.application.add_handler(CommandHandler('admin', self.handle_admin))
+    
+    async def handle_admin(self, update: Update, context: CallbackContext):
+        user_id = update.effective_user.id
+        chat_id = update.effective_chat.id
         
-        @self.bot.message_handler(func=lambda message: message.text == "审核应聘")
-        def handle_review_applications(message):
-            user_id = message.from_user.id
-            chat_id = message.chat.id
-            
-            # 检查是否为管理员
-            if user_id != ADMIN_ID:
-                self.bot.reply_to(message, "您没有管理员权限。💕")
-                return
-            
+        # 检查是否为管理员
+        if user_id != ADMIN_ID:
+            await self.application.bot.send_message(chat_id, "您没有管理员权限。💕")
+            return
+        
+        keyboard = [[InlineKeyboardButton("审核应聘", callback_data="review_applications"),
+                     InlineKeyboardButton("审核注册", callback_data="review_registrations"),
+                     InlineKeyboardButton("设置小管理员", callback_data="set_subadmin"),
+                     InlineKeyboardButton("修改最低直播时长", callback_data="set_min_stream_time")]]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await self.application.bot.send_message(chat_id, "管理员菜单", reply_markup=reply_markup)
+    
+    async def process_callback(self, update: Update, context: CallbackContext):
+        query = update.callback_query
+        await query.answer()
+        user_id = query.from_user.id
+        chat_id = query.message.chat.id
+        
+        if user_id != ADMIN_ID:
+            await self.application.bot.send_message(chat_id, "您没有管理员权限。💕")
+            return
+        
+        if query.data == "review_applications":
             pending = self.db.get_pending_applications()
             if not pending:
-                self.bot.reply_to(message, "目前没有待审核的应聘申请。💕")
+                await self.application.bot.send_message(chat_id, "目前没有待审核的应聘申请。💕")
                 return
             
             for uid, video_url, photo_url in pending:
                 admin_message = format_application_message(uid, video_url, photo_url)
-                keyboard = types.InlineKeyboardMarkup()
-                approve_btn = types.InlineKeyboardButton("通过", callback_data=f"approve_application_{uid}")
-                reject_btn = types.InlineKeyboardButton("拒绝", callback_data=f"reject_application_{uid}")
-                keyboard.add(approve_btn, reject_btn)
+                keyboard = InlineKeyboardMarkup([
+                    [InlineKeyboardButton("通过", callback_data=f"approve_application_{uid}"),
+                     InlineKeyboardButton("拒绝", callback_data=f"reject_application_{uid}")]
+                ])
                 
-                self.bot.send_message(chat_id, admin_message, reply_markup=keyboard)
+                await self.application.bot.send_message(chat_id, admin_message, reply_markup=keyboard)
         
-        @self.bot.message_handler(func=lambda message: message.text == "审核注册")
-        def handle_review_registrations(message):
-            user_id = message.from_user.id
-            chat_id = message.chat.id
-            
-            # 检查是否为管理员
-            if user_id != ADMIN_ID:
-                self.bot.reply_to(message, "您没有管理员权限。💕")
-                return
-            
+        elif query.data == "review_registrations":
             pending = self.db.get_pending_registrations()
             if not pending:
-                self.bot.reply_to(message, "目前没有待审核的注册申请。💕")
+                await self.application.bot.send_message(chat_id, "目前没有待审核的注册申请。💕")
                 return
             
             for uid, username, streamer_id, nickname in pending:
                 admin_message = format_registration_message(uid, username, streamer_id, nickname)
-                keyboard = types.InlineKeyboardMarkup()
-                approve_btn = types.InlineKeyboardButton("通过", callback_data=f"approve_registration_{uid}")
-                reject_btn = types.InlineKeyboardButton("拒绝", callback_data=f"reject_registration_{uid}")
-                keyboard.add(approve_btn, reject_btn)
+                keyboard = InlineKeyboardMarkup([
+                    [InlineKeyboardButton("通过", callback_data=f"approve_registration_{uid}"),
+                     InlineKeyboardButton("拒绝", callback_data=f"reject_registration_{uid}")]
+                ])
                 
-                self.bot.send_message(chat_id, admin_message, reply_markup=keyboard)
+                await self.application.bot.send_message(chat_id, admin_message, reply_markup=keyboard)
         
-        @self.bot.message_handler(func=lambda message: message.text == "设置小管理员")
-        def handle_set_subadmin(message):
-            user_id = message.from_user.id
-            chat_id = message.chat.id
-            
-            # 检查是否为超级管理员
-            if user_id != ADMIN_ID:
-                self.bot.reply_to(message, "您没有权限设置小管理员。💕")
-                return
-            
-            self.bot.reply_to(message, "请输入小管理员的用户ID：")
-            self.bot.register_next_step_handler(message, self._handle_set_subadmin)
+        elif query.data == "set_subadmin":
+            await self.application.bot.send_message(chat_id, "请输入小管理员的用户ID：")
         
-        def _handle_set_subadmin(message):
-            try:
-                subadmin_id = int(message.text)
-                self.db.add_admin(subadmin_id)
-                self.bot.reply_to(message, f"已成功设置用户{subadmin_id}为小管理员。💕")
-            except ValueError:
-                self.bot.reply_to(message, "请输入有效的用户ID。💕")
+        elif query.data == "set_min_stream_time":
+            await self.application.bot.send_message(chat_id, "请输入新的最低直播时长（分钟）：")
         
-        @self.bot.message_handler(func=lambda message: message.text == "修改最低直播时长")
-        def handle_set_min_stream_time(message):
-            user_id = message.from_user.id
-            chat_id = message.chat.id
+        elif query.data.startswith("approve_application_"):
+            uid = int(query.data.split("_")[-1])
+            self.db.update_application_status(uid, "approved")
+            await self.application.bot.send_message(uid, "恭喜！您的主播申请已通过审核。💕 接下来请完成注册流程。")
+            await self.application.bot.edit_message_text("申请已通过", query.message.chat.id, query.message.message_id)
             
-            # 检查是否为超级管理员
-            if user_id != ADMIN_ID:
-                self.bot.reply_to(message, "您没有权限修改最低直播时长。💕")
-                return
-            
-            self.bot.reply_to(message, "请输入新的最低直播时长（分钟）：")
-            self.bot.register_next_step_handler(message, self._handle_set_min_stream_time)
+            # 触发注册流程
+            await self.application.bot.send_message(uid, """
+请发送以下信息完成注册：
+1. 用户名（邮箱或手机号）
+2. ID（大写字母与数字）
+3. 昵称（汉字数字字母）
+            """)
         
-        def _handle_set_min_stream_time(message):
-            try:
-                new_time = int(message.text)
-                # 这里需要将新值保存到配置中，实际应用中可能需要重启服务
-                # 或使用更复杂的配置管理机制
-                self.bot.reply_to(message, f"已将最低直播时长设置为{new_time}分钟。💕")
-            except ValueError:
-                self.bot.reply_to(message, "请输入有效的数字。💕")
-    
-    def process_callback(self, call):
-        # 处理其他模块的回调
-        pass
+        elif query.data.startswith("reject_application_"):
+            uid = int(query.data.split("_")[-1])
+            self.db.update_application_status(uid, "rejected")
+            await self.application.bot.send_message(uid, "很抱歉，您的申请未通过审核。💕 您可以重新申请。")
+            await self.application.bot.edit_message_text("申请已拒绝", query.message.chat.id, query.message.message_id)
+        
+        elif query.data.startswith("approve_registration_"):
+            uid = int(query.data.split("_")[-1])
+            self.db.update_registration_status(uid, "approved")
+            await self.application.bot.send_message(uid, "恭喜！您的注册已通过审核。💕 您可以开始使用打卡功能了。")
+            await self.application.bot.edit_message_text("注册已通过", query.message.chat.id, query.message.message_id)
+        
+        elif query.data.startswith("reject_registration_"):
+            uid = int(query.data.split("_")[-1])
+            self.db.update_registration_status(uid, "rejected")
+            await self.application.bot.send_message(uid, "很抱歉，您的注册未通过审核。💕 您可以重新申请。")
+            await self.application.bot.edit_message_text("注册已拒绝", query.message.chat.id, query.message.message_id)
