@@ -1,4 +1,5 @@
-from telebot import TeleBot, types
+from telegram import Update
+from telegram.ext import CallbackContext, CommandHandler, MessageHandler, Filters
 from database import Database
 from config import MIN_DAILY_STREAM_TIME, BRAND_LOGO
 from utils import format_checkin_reminder, format_monthly_summary
@@ -8,58 +9,59 @@ import time
 from apscheduler.schedulers.background import BackgroundScheduler
 
 class CheckinModule:
-    def __init__(self, bot: TeleBot, db: Database):
-        self.bot = bot
+    def __init__(self, application, db):
+        self.application = application
         self.db = db
         self._setup_handlers()
         self._setup_scheduler()
     
     def _setup_handlers(self):
-        @self.bot.message_handler(commands=['checkin'])
-        def handle_checkin(message):
-            user_id = message.from_user.id
-            chat_id = message.chat.id
-            
-            # 检查是否已打卡
-            today = datetime.now().strftime("%Y-%m-%d")
-            self.cursor.execute('SELECT start_time FROM checkins WHERE user_id = ? AND checkin_date = ?', (user_id, today))
-            result = self.cursor.fetchone()
-            
-            if result:
-                self.bot.reply_to(message, "您今天已经打过卡了。💕")
-                return
-            
-            # 记录打卡时间
-            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            self.db.record_checkin(user_id, now)
-            self.bot.reply_to(message, "打卡成功！💕 请在直播结束后再次打卡。")
+        self.application.add_handler(CommandHandler('checkin', self.handle_checkin))
+        self.application.add_handler(CommandHandler('checkout', self.handle_checkout))
+        self.application.add_handler(CommandHandler('stats', self.handle_stats))
+    
+    async def handle_checkin(self, update: Update, context: CallbackContext):
+        user_id = update.effective_user.id
+        chat_id = update.effective_chat.id
         
-        @self.bot.message_handler(commands=['checkout'])
-        def handle_checkout(message):
-            user_id = message.from_user.id
-            chat_id = message.chat.id
-            
-            # 检查是否已打卡
-            today = datetime.now().strftime("%Y-%m-%d")
-            self.cursor.execute('SELECT start_time FROM checkins WHERE user_id = ? AND checkin_date = ?', (user_id, today))
-            result = self.cursor.fetchone()
-            
-            if not result:
-                self.bot.reply_to(message, "您今天尚未打卡。💕 请先使用/checkin命令打卡。")
-                return
-            
-            # 记录下播时间
-            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            self.db.record_checkout(user_id, now)
-            self.bot.reply_to(message, "下播打卡成功！💕 今天的直播时长已记录。")
+        # 检查是否已打卡
+        today = datetime.now().strftime("%Y-%m-%d")
+        self.cursor.execute('SELECT start_time FROM checkins WHERE user_id = ? AND checkin_date = ?', (user_id, today))
+        result = self.cursor.fetchone()
         
-        @self.bot.message_handler(commands=['stats'])
-        def handle_stats(message):
-            user_id = message.from_user.id
-            chat_id = message.chat.id
-            
-            monthly_total = self.db.get_monthly_stats(user_id)
-            self.bot.reply_to(message, f"本月累计直播时长：{monthly_total} 分钟。💕")
+        if result:
+            await self.application.bot.send_message(chat_id, "您今天已经打过卡了。💕")
+            return
+        
+        # 记录打卡时间
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        self.db.record_checkin(user_id, now)
+        await self.application.bot.send_message(chat_id, "打卡成功！💕 请在直播结束后再次打卡。")
+    
+    async def handle_checkout(self, update: Update, context: CallbackContext):
+        user_id = update.effective_user.id
+        chat_id = update.effective_chat.id
+        
+        # 检查是否已打卡
+        today = datetime.now().strftime("%Y-%m-%d")
+        self.cursor.execute('SELECT start_time FROM checkins WHERE user_id = ? AND checkin_date = ?', (user_id, today))
+        result = self.cursor.fetchone()
+        
+        if not result:
+            await self.application.bot.send_message(chat_id, "您今天尚未打卡。💕 请先使用/checkin命令打卡。")
+            return
+        
+        # 记录下播时间
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        self.db.record_checkout(user_id, now)
+        await self.application.bot.send_message(chat_id, "下播打卡成功！💕 今天的直播时长已记录。")
+    
+    async def handle_stats(self, update: Update, context: CallbackContext):
+        user_id = update.effective_user.id
+        chat_id = update.effective_chat.id
+        
+        monthly_total = self.db.get_monthly_stats(user_id)
+        await self.application.bot.send_message(chat_id, f"本月累计直播时长：{monthly_total} 分钟。💕")
     
     def _setup_scheduler(self):
         # 创建调度器
@@ -88,14 +90,14 @@ class CheckinModule:
             
             if not result:
                 # 未打卡，发送提醒
-                self.bot.send_message(user_id, "今天还没打卡哦！💕 请记得使用/checkin命令开始直播打卡。")
+                self.application.bot.send_message(user_id, "今天还没打卡哦！💕 请记得使用/checkin命令开始直播打卡。")
                 continue
             
             duration = result[0]
             if duration < min_daily:
                 # 未达到最低时长，发送提醒
                 monthly_total = self.db.get_monthly_stats(user_id)
-                self.bot.send_message(user_id, format_checkin_reminder(user_id, monthly_total, min_daily))
+                self.application.bot.send_message(user_id, format_checkin_reminder(user_id, monthly_total, min_daily))
     
     def _monthly_summary(self):
         # 获取所有注册用户
@@ -104,4 +106,4 @@ class CheckinModule:
         
         for user_id, in users:
             monthly_total = self.db.get_monthly_stats(user_id)
-            self.bot.send_message(user_id, format_monthly_summary(user_id, monthly_total))
+            self.application.bot.send_message(user_id, format_monthly_summary(user_id, monthly_total))
