@@ -1,5 +1,5 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import CallbackContext, CommandHandler, MessageHandler, Filters, CallbackQueryHandler
+from telegram.ext import CallbackContext
 from database import Database
 from config import BRAND_LOGO, ADMIN_ID
 from utils import format_application_message
