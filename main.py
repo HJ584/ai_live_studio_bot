@@ -1,4 +1,5 @@
 import logging
+from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, Filters, CallbackQueryHandler
 from config import BOT_TOKEN, BRAND_LOGO
 from database import Database
