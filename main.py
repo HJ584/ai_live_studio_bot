@@ -1,5 +1,5 @@
 import logging
-from telebot import TeleBot
+from telegram import Bot
 from config import BOT_TOKEN, BRAND_LOGO
 from database import Database
 from modules.application import ApplicationModule
