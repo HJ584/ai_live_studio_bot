@@ -22,9 +22,9 @@ def format_welcome_message(user_name):
 亲爱的 {user_name}，感谢您选择我们！
 
 为了完成您的主播注册，请发送以下信息：
-1. 91APP 用户名（邮箱或手机号）
-2. 91APP ID（大写字母与数字）
-3. 91APP 昵称（汉字数字字母）
+1. 用户名（邮箱或手机号）
+2. ID（大写字母与数字）
+3. 昵称（汉字数字字母）
 
 我们将尽快审核您的信息。💕
     """
@@ -44,17 +44,17 @@ def format_registration_message(user_id, username, streamer_id, nickname):
     return f"""
 🔔 新的主播注册申请！🔔
     
-91APP 注册者ID: {user_id}
-91APP 用户名: {username}
-91APP 主播ID: {streamer_id}
-91APP 昵称: {nickname}
+注册者ID: {user_id}
+用户名: {username}
+主播ID: {streamer_id}
+昵称: {nickname}
 
 请审核此申请。💕
     """
 
 def format_checkin_reminder(user_name, monthly_total, daily_min):
     return f"""
-⏰ 91APP 直播提醒！⏰
+⏰ 直播提醒！⏰
     
 亲爱的 {user_name}，本月已直播 {monthly_total} 分钟。
 
